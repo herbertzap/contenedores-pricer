@@ -15,12 +15,39 @@ class HermesService
     private $baseUrl;
     private $apiKey;
     private $timeout;
+    private $ambiente;
+    private $modoSimulacion;
 
     public function __construct()
     {
-        $this->baseUrl = config('hermes.base_url', 'https://api-hermes.aduana.cl');
-        $this->apiKey = config('hermes.api_key', 'WW2Psa5F201ONZHSxuDif8M7smW12pE29tvups3l');
+        $this->ambiente = config('hermes.ambiente', 'test');
+        $this->modoSimulacion = config('hermes.modo_simulacion', false);
         $this->timeout = config('hermes.timeout', 30);
+        
+        // Seleccionar URL y API Key según el ambiente
+        if ($this->ambiente === 'production') {
+            $this->baseUrl = config('hermes.base_url', 'https://api-hermes.aduana.cl');
+            $this->apiKey = config('hermes.api_key');
+        } else {
+            // Ambiente TEST
+            $this->baseUrl = config('hermes.base_url_test', 'https://api-hermes-test.aduana.cl');
+            $this->apiKey = config('hermes.api_key_test');
+        }
+        
+        Log::info("HERMES: Inicializado en ambiente [{$this->ambiente}] - URL: {$this->baseUrl}");
+    }
+    
+    /**
+     * Obtener información del ambiente actual
+     */
+    public function getAmbienteInfo()
+    {
+        return [
+            'ambiente' => $this->ambiente,
+            'base_url' => $this->baseUrl,
+            'modo_simulacion' => $this->modoSimulacion,
+            'api_key_configurada' => !empty($this->apiKey) && $this->apiKey !== 'TOKEN_TEST_PENDIENTE' && $this->apiKey !== 'TOKEN_PRODUCCION_PENDIENTE'
+        ];
     }
 
     /**
@@ -140,13 +167,51 @@ class HermesService
             'tipo_operacion' => $tipoOperacion,
             'numero_documento' => $numeroDocumento,
             'payload_enviado' => $payload,
-            'estado' => 'ENVIADO',
+            'estado' => $this->modoSimulacion ? 'SIMULADO' : 'ENVIADO',
             'endpoint' => $endpoint,
-            'api_key_utilizada' => $this->apiKey,
+            'api_key_utilizada' => substr($this->apiKey, 0, 10) . '...',
             'ultimo_intento' => now(),
         ]);
+        
+        // MODO SIMULACIÓN: No envía realmente a HERMES
+        if ($this->modoSimulacion) {
+            $respuestaSimulada = [
+                'success' => true,
+                'message' => 'Mensaje simulado - No enviado a HERMES',
+                'ambiente' => $this->ambiente,
+                'timestamp' => now()->toISOString(),
+                'documento' => $numeroDocumento
+            ];
+            
+            $log->update([
+                'respuesta_recibida' => $respuestaSimulada,
+                'codigo_respuesta' => 200,
+                'estado' => 'SIMULADO',
+            ]);
+            
+            Log::info("HERMES [SIMULACIÓN]: Mensaje registrado sin enviar", [
+                'tipo' => $tipoOperacion,
+                'documento' => $numeroDocumento,
+                'endpoint' => $endpoint,
+                'ambiente' => $this->ambiente
+            ]);
+            
+            return [
+                'success' => true,
+                'simulado' => true,
+                'response' => $respuestaSimulada,
+                'log_id' => $log->id,
+                'mensaje' => 'Modo simulación activo - Mensaje NO enviado a HERMES'
+            ];
+        }
 
         try {
+            Log::info("HERMES [{$this->ambiente}]: Enviando mensaje", [
+                'tipo' => $tipoOperacion,
+                'documento' => $numeroDocumento,
+                'url' => $url
+            ]);
+            
             $response = Http::timeout($this->timeout)
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $this->apiKey,
@@ -163,7 +228,7 @@ class HermesService
             ]);
 
             if ($response->successful()) {
-                Log::info("HERMES: Mensaje enviado exitosamente", [
+                Log::info("HERMES [{$this->ambiente}]: Mensaje enviado exitosamente", [
                     'tipo' => $tipoOperacion,
                     'documento' => $numeroDocumento,
                     'endpoint' => $endpoint
@@ -171,11 +236,12 @@ class HermesService
                 
                 return [
                     'success' => true,
+                    'ambiente' => $this->ambiente,
                     'response' => $response->json(),
                     'log_id' => $log->id
                 ];
             } else {
-                Log::error("HERMES: Error al enviar mensaje", [
+                Log::error("HERMES [{$this->ambiente}]: Error al enviar mensaje", [
                     'tipo' => $tipoOperacion,
                     'documento' => $numeroDocumento,
                     'endpoint' => $endpoint,
@@ -185,6 +251,7 @@ class HermesService
                 
                 return [
                     'success' => false,
+                    'ambiente' => $this->ambiente,
                     'error' => $response->body(),
                     'status' => $response->status(),
                     'log_id' => $log->id
@@ -198,7 +265,7 @@ class HermesService
                 'ultimo_intento' => now(),
             ]);
 
-            Log::error("HERMES: Excepción al enviar mensaje", [
+            Log::error("HERMES [{$this->ambiente}]: Excepción al enviar mensaje", [
                 'tipo' => $tipoOperacion,
                 'documento' => $numeroDocumento,
                 'endpoint' => $endpoint,
@@ -207,6 +274,7 @@ class HermesService
 
             return [
                 'success' => false,
+                'ambiente' => $this->ambiente,
                 'error' => $e->getMessage(),
                 'log_id' => $log->id
             ];

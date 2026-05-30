@@ -196,3 +196,34 @@ Route::prefix('procedimientos-cambio-claves')->name('procedimientos-cambio-clave
 Route::get('/manual-sistema', [App\Http\Controllers\ManualController::class, 'pdfPublico'])->name('manual-sistema-publico');
 
 Route::get('/procedimientos-respaldo', [ProcedimientosRespaldoController::class, 'pdfPublico'])->name('procedimientos-respaldo-publico');
+
+// Rutas de Cotizaciones
+Route::prefix('cotizaciones')->name('cotizaciones.')->middleware(['auth'])->group(function () {
+    Route::get('/', [App\Http\Controllers\CotizacionController::class, 'index'])->name('index');
+    Route::get('/{codigo}', [App\Http\Controllers\CotizacionController::class, 'ver'])->name('ver');
+    Route::get('/{codigo}/pdf', [App\Http\Controllers\CotizacionController::class, 'descargarPdf'])->name('pdf');
+    Route::get('/{codigo}/ver-pdf', [App\Http\Controllers\CotizacionController::class, 'verPdf'])->name('ver-pdf');
+});
+
+// Ruta corta para cotización (compatibilidad)
+Route::get('/cotizacion/{codigo}', [App\Http\Controllers\CotizacionController::class, 'ver'])
+    ->middleware('auth')
+    ->name('cotizacion.ver');
+
+// Rutas de Contratos
+Route::prefix('contratos')->name('contratos.')->middleware(['auth'])->group(function () {
+    Route::get('/', [App\Http\Controllers\ContratoController::class, 'index'])->name('index');
+    Route::get('/{codigo}', [App\Http\Controllers\ContratoController::class, 'ver'])->name('ver');
+    Route::get('/{codigo}/pdf', [App\Http\Controllers\ContratoController::class, 'descargarPdf'])->name('pdf');
+    Route::get('/{codigo}/ver-pdf', [App\Http\Controllers\ContratoController::class, 'verPdf'])->name('ver-pdf');
+});
+
+// Rutas de Documentacion
+Route::prefix('docs')->name('docs.')->group(function () {
+    // API V1 Cliente
+    Route::get('/api-v1', [App\Http\Controllers\DocsController::class, 'apiV1Cliente'])->name('api-v1');
+    Route::get('/api-v1/pdf', [App\Http\Controllers\DocsController::class, 'apiV1ClientePdf'])->name('api-v1-pdf');
+    // Onboarding Nuevo Operador
+    Route::get('/onboarding', [App\Http\Controllers\DocsController::class, 'onboardingOperador'])->name('onboarding');
+    Route::get('/onboarding/pdf', [App\Http\Controllers\DocsController::class, 'onboardingOperadorPdf'])->name('onboarding-pdf');
+});

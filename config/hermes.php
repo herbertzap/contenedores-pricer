@@ -10,14 +10,27 @@ return [
     |
     */
 
-    // URL base de la API de HERMES
-    'base_url' => env('HERMES_BASE_URL', 'https://api-hermes.aduana.cl'),
+    // Ambiente: 'production' o 'test'
+    'ambiente' => env('HERMES_AMBIENTE', 'test'),
 
-    // API Key para autenticación
-    'api_key' => env('HERMES_API_KEY', 'TOKEN_PRUEBA_PENDIENTE'), // WW2Psa5F201ONZHSxuDif8M7smW12pE29tvups3l
+    // URL base de la API de HERMES (Producción)
+    'base_url' => env('HERMES_BASE_URL', 'https://api-hermes.aduana.cl'),
+    
+    // URL base de la API de HERMES (TEST/Desarrollo)
+    'base_url_test' => env('HERMES_BASE_URL_TEST', 'https://api-hermes-test.aduana.cl'),
+
+    // API Key para autenticación (Producción)
+    'api_key' => env('HERMES_API_KEY', 'TOKEN_PRODUCCION_PENDIENTE'),
+    
+    // API Key para autenticación (TEST)
+    'api_key_test' => env('HERMES_API_KEY_TEST', 'TOKEN_TEST_PENDIENTE'),
 
     // Timeout para las peticiones HTTP (en segundos)
     'timeout' => env('HERMES_TIMEOUT', 30),
+    
+    // Modo simulación (no envía a HERMES, solo registra en logs)
+    // ACTIVADO POR DEFECTO para no afectar producción
+    'modo_simulacion' => env('HERMES_MODO_SIMULACION', true),
 
     // Número máximo de reintentos para mensajes fallidos
     'max_retries' => env('HERMES_MAX_RETRIES', 3),
