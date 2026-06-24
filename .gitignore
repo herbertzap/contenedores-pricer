@@ -21,6 +21,7 @@
 /vendor
 /docs
 !/docs/INSTALACION_WINDOWS.md
+!/docs/INSTALACION_MAC.md
 Homestead.json
 Homestead.yaml
 Thumbs.db
