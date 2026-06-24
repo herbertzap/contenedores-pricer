@@ -6,46 +6,42 @@ Esta guía explica cómo instalar y levantar el **Sistema de Administración de 
 
 ## Resumen rápido (usuario básico)
 
-Si ya tiene PHP, Composer, Node.js y MySQL instalados:
+**No necesita instalar nada manualmente.** El instalador descarga todo automáticamente.
 
 | Acción | Qué hacer |
 |--------|-----------|
-| **Primera vez** | Doble clic en `Instalar.command` en la raíz del proyecto |
+| **Primera vez** | Doble clic en `Instalar.command` |
 | **Siguientes veces** | Doble clic en `Iniciar.command` |
-| **Abrir la app** | Navegador en `http://127.0.0.1:8000` |
+| **Se abre solo** | Navegador en `http://127.0.0.1:8000/sign-in` |
 
-> **Nota:** Si macOS bloquea la ejecución, clic derecho → **Abrir** → confirmar. O desde Terminal: `chmod +x Instalar.command Iniciar.command`
+El instalador descarga e instala automáticamente vía Homebrew:
+- **PHP** + **Composer**
+- **MySQL**
+- **Node.js** + **Vite** (npm install)
+- **Datos de prueba** + usuario **Super Admin**
 
-**Credenciales por defecto** (creadas por el seeder):
+**Credenciales Super Admin:**
 
-- Email: `admin@material.com`
-- Contraseña: `secret`
+- Email: `superadmin@pricer.cl`
+- Contraseña: `pricer123`
+
+**Admin demo adicional:**
+
+- Email: `admin@pricer.cl`
+- Contraseña: `pricer123`
 
 ---
 
 ## Requisitos previos
 
-Instale estas herramientas antes de ejecutar los scripts.
+**No es necesario instalar nada manualmente.** `Instalar.command` descarga e instala automáticamente con Homebrew:
 
-| Herramienta | Versión mínima | Instalación recomendada |
-|-------------|----------------|-------------------------|
-| **PHP** | 8.2 | `brew install php` |
-| **Composer** | 2.x | [getcomposer.org](https://getcomposer.org/download/) |
-| **Node.js** (incluye npm) | 18 LTS+ | `brew install node` |
-| **MySQL** | 8.0 | `brew install mysql` |
+- PHP 8.2+
+- MySQL 8
+- Node.js (para Vite)
+- Composer
 
-### Extensiones PHP requeridas
-
-Con Homebrew suelen venir incluidas. Verifique con:
-
-```bash
-php -v
-php -m | grep -E 'curl|fileinfo|gd|mbstring|pdo_mysql|zip|bcmath'
-composer -V
-node -v
-npm -v
-mysql --version
-```
+Solo necesita conexión a internet y permisos de administrador en Mac (para Homebrew).
 
 ---
 
@@ -75,16 +71,15 @@ Doble clic en **`Instalar.command`** o desde Terminal:
 
 El script realiza automáticamente:
 
-1. Verifica PHP, Composer, Node.js y npm
-2. Crea `.env` desde `.env.mac.example`
-3. `composer install`
-4. `npm install`
+1. Instala Homebrew (si no existe)
+2. Instala PHP, MySQL, Node.js y Composer
+3. Crea `.env` desde `.env.mac.example`
+4. `composer install` y `npm install`
 5. `php artisan key:generate`
-6. Inicia MySQL (Homebrew / mysql.server)
-7. Crea la base de datos `contenedores_pricer`
-8. `php artisan migrate` y `php artisan db:seed`
-9. `php artisan storage:link`
-10. Abre Laravel y Vite en ventanas de Terminal
+6. Inicia MySQL
+7. Crea la base de datos y carga **datos de demostración**
+8. Crea usuario **Super Admin** y datos de prueba (TATC, TSTC, contenedores, etc.)
+9. Abre Laravel, Vite y el **navegador** en la pantalla de login
 
 ### 4. Inicios posteriores
 
@@ -94,7 +89,7 @@ Doble clic en **`Iniciar.command`** o:
 ./Iniciar.command
 ```
 
-Solo inicia MySQL, Laravel y Vite **sin reinstalar** dependencias.
+Solo inicia MySQL, Laravel y Vite, y **abre el navegador** en la pantalla de login.
 
 ---
 

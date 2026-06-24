@@ -16,6 +16,9 @@ DB_PASS=""
 # Puerto del servidor Laravel (php artisan serve)
 LARAVEL_PORT="8000"
 
+# Segundos de espera antes de abrir el navegador
+BROWSER_WAIT_SECONDS="5"
+
 # Ruta opcional a mysql si no esta en el PATH
 # Ejemplos:
 #   Homebrew Intel:  /usr/local/bin/mysql

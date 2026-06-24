@@ -9,69 +9,59 @@ source "$SCRIPT_DIR/_helpers.sh"
 
 echo "============================================================"
 echo "  INSTALACION COMPLETA - Sistema Contenedores Pricer (macOS)"
-echo "  Primera vez: dependencias, MySQL, migraciones y servidores"
+echo "  Instala PHP, MySQL, Node/Vite, datos demo y abre el sistema"
 echo "============================================================"
 
 cd "$PROJECT_ROOT"
+setup_brew_path
 
-check_prerequisites || exit 1
+install_system_dependencies || exit 1
 
 echo ""
-echo "[2/2] Configurando entorno en: ${PROJECT_ROOT}"
+echo "Configurando entorno en: ${PROJECT_ROOT}"
 echo ""
 
-echo "[Paso 1/8] Configurando archivo .env..."
+echo "[Paso 1/7] Configurando archivo .env..."
 setup_env || exit 1
 
 echo ""
-echo "[Paso 2/8] Instalando dependencias PHP (composer install)..."
+echo "[Paso 2/7] Instalando dependencias PHP (composer install)..."
 echo "           Esto puede tardar varios minutos..."
 composer install --no-interaction --prefer-dist
 
 echo ""
-echo "[Paso 3/8] Instalando dependencias Node.js (npm install)..."
+echo "[Paso 3/7] Instalando dependencias Node.js / Vite (npm install)..."
 npm install
 
 echo ""
-echo "[Paso 4/8] Generando clave de aplicacion..."
+echo "[Paso 4/7] Generando clave de aplicacion..."
 php artisan key:generate --force
 
 echo ""
-echo "[Paso 5/8] Iniciando MySQL..."
+echo "[Paso 5/7] Iniciando MySQL..."
 start_mysql || exit 1
 
 echo ""
-echo "[Paso 6/8] Creando base de datos..."
+echo "[Paso 6/7] Creando base de datos..."
 create_database || exit 1
 
-echo ""
-echo "[Paso 7/8] Ejecutando migraciones y datos iniciales..."
-php artisan migrate --force
-
-if ! php artisan db:seed --force; then
-    echo "       [AVISO] db:seed fallo. Puede continuar si la BD ya tenia datos."
-fi
+seed_demo_data || exit 1
 
 if [[ ! -e public/storage ]]; then
     php artisan storage:link
 fi
 
-echo "       OK - Base de datos configurada."
-
 echo ""
-echo "[Paso 8/8] Levantando servidores..."
-start_servers
+echo "[Paso 7/7] Levantando servidores y abriendo navegador..."
+start_servers true
 
 echo ""
 echo "============================================================"
 echo "  INSTALACION COMPLETADA"
 echo "============================================================"
+print_credentials
 echo ""
-echo "  Abra el navegador en: http://127.0.0.1:${LARAVEL_PORT}"
-echo ""
-echo "  Usuario por defecto (seeder):"
-echo "    Email:    admin@material.com"
-echo "    Password: secret"
+echo "  URL: http://127.0.0.1:${LARAVEL_PORT}/sign-in"
 echo ""
 echo "  Para futuros inicios use: Iniciar.command (doble clic)"
 echo "  Guia completa: docs/INSTALACION_MAC.md"

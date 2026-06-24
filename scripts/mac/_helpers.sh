@@ -6,29 +6,118 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=config.sh
 source "$SCRIPT_DIR/config.sh"
 
-check_command() {
-    if ! command -v "$1" >/dev/null 2>&1; then
-        echo "[ERROR] No se encontro '$1' en el PATH."
-        echo "        Instale $1 y agreguelo al PATH, luego vuelva a ejecutar."
+setup_brew_path() {
+    if [[ -x /opt/homebrew/bin/brew ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -x /usr/local/bin/brew ]]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+}
+
+install_homebrew_if_needed() {
+    setup_brew_path
+    if command -v brew >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo ""
+    echo "Instalando Homebrew (gestor de paquetes de macOS)..."
+    echo "Puede pedir su contraseña de Mac..."
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    setup_brew_path
+
+    if ! command -v brew >/dev/null 2>&1; then
+        echo "[ERROR] No se pudo instalar Homebrew."
+        echo "        Instale manualmente desde https://brew.sh y vuelva a ejecutar."
         return 1
     fi
+
+    echo "       OK - Homebrew instalado."
     return 0
 }
 
-check_prerequisites() {
+brew_install_if_missing() {
+    local pkg="$1"
+    if brew list "$pkg" &>/dev/null; then
+        echo "       OK - ${pkg} ya instalado."
+        return 0
+    fi
+
+    echo "       Instalando ${pkg} con Homebrew..."
+    if ! brew install "$pkg"; then
+        echo "[ERROR] No se pudo instalar ${pkg}."
+        return 1
+    fi
+    echo "       OK - ${pkg} instalado."
+    return 0
+}
+
+install_composer_if_needed() {
+    if command -v composer >/dev/null 2>&1; then
+        echo "       OK - Composer ya instalado."
+        return 0
+    fi
+
+    if brew_install_if_missing composer; then
+        return 0
+    fi
+
+    echo "       Descargando Composer..."
+    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+    php composer-setup.php --quiet --install-dir=/usr/local/bin --filename=composer 2>/dev/null \
+        || php composer-setup.php --quiet --install-dir="$HOME/.local/bin" --filename=composer
+    php -r "unlink('composer-setup.php');"
+
+    if [[ -x "$HOME/.local/bin/composer" ]]; then
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
+
+    if command -v composer >/dev/null 2>&1; then
+        echo "       OK - Composer instalado."
+        return 0
+    fi
+
+    echo "[ERROR] No se pudo instalar Composer."
+    return 1
+}
+
+install_system_dependencies() {
     echo ""
-    echo "[1/2] Verificando PHP, Composer, Node.js y npm..."
-    check_command php || return 1
-    check_command composer || return 1
-    check_command node || return 1
-    check_command npm || return 1
-    echo "       OK - Herramientas encontradas."
+    echo "[Paso 0] Instalando herramientas del sistema (PHP, MySQL, Node.js, Composer)..."
+
+    install_homebrew_if_needed || return 1
+    setup_brew_path
+
+    brew_install_if_missing php || return 1
+    brew_install_if_missing mysql || return 1
+    brew_install_if_missing node || return 1
+    install_composer_if_needed || return 1
+
+    if ! brew services list 2>/dev/null | grep -qE "^${BREW_MYSQL_SERVICE}\s"; then
+        if brew services list 2>/dev/null | grep -qE "^mysql@"; then
+            BREW_MYSQL_SERVICE="$(brew services list 2>/dev/null | awk '/^mysql@/{print $1; exit}')"
+        fi
+    fi
+
+    echo "       OK - Herramientas del sistema listas."
+    return 0
+}
+
+check_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "[ERROR] No se encontro '$1' en el PATH."
+        return 1
+    fi
     return 0
 }
 
 mysql_cmd() {
     if [[ -n "$MYSQL_BIN" && -x "$MYSQL_BIN" ]]; then
         echo "$MYSQL_BIN"
+    elif [[ -x /opt/homebrew/bin/mysql ]]; then
+        echo "/opt/homebrew/bin/mysql"
+    elif [[ -x /usr/local/bin/mysql ]]; then
+        echo "/usr/local/bin/mysql"
     else
         echo "mysql"
     fi
@@ -47,6 +136,7 @@ mysql_exec() {
 start_mysql() {
     # shellcheck source=config.sh
     source "$SCRIPT_DIR/config.sh"
+    setup_brew_path
 
     echo ""
     echo "Iniciando MySQL..."
@@ -58,20 +148,18 @@ start_mysql() {
 
     if command -v brew >/dev/null 2>&1 && [[ -n "$BREW_MYSQL_SERVICE" ]]; then
         echo "       Iniciando servicio Homebrew: ${BREW_MYSQL_SERVICE}..."
-        if brew services start "$BREW_MYSQL_SERVICE" >/dev/null 2>&1; then
-            sleep 3
-            if mysql_exec -e "SELECT 1;" >/dev/null 2>&1; then
-                echo "       OK - MySQL iniciado con brew services."
-                return 0
-            fi
+        brew services start "$BREW_MYSQL_SERVICE" >/dev/null 2>&1 || true
+        sleep 4
+        if mysql_exec -e "SELECT 1;" >/dev/null 2>&1; then
+            echo "       OK - MySQL iniciado con brew services."
+            return 0
         fi
-        echo "       [AVISO] brew services no pudo iniciar ${BREW_MYSQL_SERVICE}."
     fi
 
     if [[ -n "$MYSQL_START_CMD" ]]; then
         echo "       Ejecutando: ${MYSQL_START_CMD}"
         eval "$MYSQL_START_CMD"
-        sleep 3
+        sleep 4
         if mysql_exec -e "SELECT 1;" >/dev/null 2>&1; then
             echo "       OK - MySQL responde tras comando personalizado."
             return 0
@@ -79,9 +167,8 @@ start_mysql() {
     fi
 
     if command -v mysql.server >/dev/null 2>&1; then
-        echo "       Intentando mysql.server start..."
         mysql.server start >/dev/null 2>&1 || true
-        sleep 2
+        sleep 3
         if mysql_exec -e "SELECT 1;" >/dev/null 2>&1; then
             echo "       OK - MySQL iniciado con mysql.server."
             return 0
@@ -89,9 +176,7 @@ start_mysql() {
     fi
 
     echo "[ERROR] No se pudo iniciar ni conectar a MySQL."
-    echo "        - Instale MySQL: brew install mysql"
-    echo "        - O inicie MAMP / DBngin manualmente"
-    echo "        - Ajuste scripts/mac/config.sh"
+    echo "        Pruebe: brew services start mysql"
     return 1
 }
 
@@ -101,7 +186,6 @@ create_database() {
 
     if ! mysql_exec -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"; then
         echo "[ERROR] No se pudo crear la base de datos '${DB_NAME}'."
-        echo "        Revise usuario, contrasena y permisos en scripts/mac/config.sh y .env"
         return 1
     fi
     echo "       OK - Base de datos '${DB_NAME}' lista."
@@ -132,7 +216,17 @@ setup_env() {
     return 1
 }
 
+open_browser() {
+    local url="http://127.0.0.1:${LARAVEL_PORT}/sign-in"
+    echo ""
+    echo "Abriendo navegador en ${url}..."
+    sleep "${BROWSER_WAIT_SECONDS:-4}"
+    open "$url" 2>/dev/null || true
+}
+
 start_servers() {
+    local open_browser_flag="${1:-false}"
+
     # shellcheck source=config.sh
     source "$SCRIPT_DIR/config.sh"
 
@@ -141,8 +235,6 @@ start_servers() {
     echo "  - Laravel: http://127.0.0.1:${LARAVEL_PORT}"
     echo "  - Vite:    compilacion de assets en caliente"
     echo ""
-    echo "Para detener: cierre las pestanas 'Laravel Server' y 'Vite Dev' en Terminal."
-    echo ""
 
     local escaped_root
     escaped_root="$(printf '%s' "$PROJECT_ROOT" | sed "s/'/'\\\\''/g")"
@@ -150,9 +242,27 @@ start_servers() {
     osascript <<EOF
 tell application "Terminal"
     activate
-    do script "cd '${escaped_root}' && echo 'Servidor Laravel en http://127.0.0.1:${LARAVEL_PORT}' && php artisan serve --host=127.0.0.1 --port=${LARAVEL_PORT}"
+    do script "cd '${escaped_root}' && echo '=== Laravel Server ===' && php artisan serve --host=127.0.0.1 --port=${LARAVEL_PORT}"
     delay 1
-    do script "cd '${escaped_root}' && echo 'Compilando assets con Vite...' && npm run dev"
+    do script "cd '${escaped_root}' && echo '=== Vite Dev ===' && npm run dev"
 end tell
 EOF
+
+    if [[ "$open_browser_flag" == "true" ]]; then
+        open_browser
+    fi
+}
+
+seed_demo_data() {
+    echo ""
+    echo "Cargando datos de prueba y usuario super administrador..."
+    php artisan migrate:fresh --seed --force
+    echo "       OK - Datos de demostracion cargados."
+}
+
+print_credentials() {
+    echo ""
+    echo "  Credenciales de acceso:"
+    echo "    Super Admin -> superadmin@pricer.cl / pricer123"
+    echo "    Admin       -> admin@pricer.cl / pricer123"
 }
