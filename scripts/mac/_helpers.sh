@@ -14,6 +14,161 @@ setup_brew_path() {
     fi
 }
 
+brew_is_busy() {
+    pgrep -x brew >/dev/null 2>&1 || pgrep -f "/brew install" >/dev/null 2>&1
+}
+
+cleanup_stale_brew_downloads() {
+    if brew_is_busy; then
+        return 0
+    fi
+
+    local cache_dir
+    cache_dir="$(brew --cache 2>/dev/null || echo "$HOME/Library/Caches/Homebrew")"
+    if [[ -d "$cache_dir/downloads" ]]; then
+        find "$cache_dir/downloads" -name '*.incomplete' -delete 2>/dev/null || true
+    fi
+}
+
+wait_for_brew_available() {
+    local max_attempts="${1:-24}"
+    local attempt=0
+    local wait_seconds="${2:-10}"
+
+    while (( attempt < max_attempts )); do
+        if ! brew_is_busy; then
+            cleanup_stale_brew_downloads
+            return 0
+        fi
+
+        ((attempt++))
+        echo "       Homebrew ocupado (otra instalacion en curso). Esperando ${wait_seconds}s... (${attempt}/${max_attempts})"
+        sleep "$wait_seconds"
+    done
+
+    echo "[ERROR] Homebrew sigue ocupado."
+    echo "        Cierre otras ventanas de Terminal con 'brew install' en ejecucion."
+    echo "        O espere a que termine y vuelva a ejecutar Instalar.command."
+    echo ""
+    echo "        Si no hay otra instalacion activa, ejecute en Terminal:"
+    echo "          rm -f \"\$(brew --cache)/downloads/\"*.incomplete"
+    echo "          brew install php"
+    return 1
+}
+
+is_brew_pkg_installed() {
+    local pkg="$1"
+    brew list --formula "$pkg" &>/dev/null 2>&1
+}
+
+is_php_ready() {
+    if command -v php >/dev/null 2>&1; then
+        php -r 'exit(version_compare(PHP_VERSION, "8.2.0", ">=") ? 0 : 1);' 2>/dev/null
+    else
+        return 1
+    fi
+}
+
+is_node_ready() {
+    command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1
+}
+
+is_mysql_ready() {
+    if command -v mysql >/dev/null 2>&1; then
+        return 0
+    fi
+    is_brew_pkg_installed mysql || is_brew_pkg_installed mysql@8.0 || is_brew_pkg_installed mysql@8.4
+}
+
+brew_install_with_retry() {
+    local pkg="$1"
+    local max_attempts=8
+    local attempt=0
+    local output=""
+
+    while (( attempt < max_attempts )); do
+        wait_for_brew_available 18 10 || return 1
+
+        echo "       Instalando ${pkg} con Homebrew..."
+        if output="$(brew install "$pkg" 2>&1)"; then
+            echo "       OK - ${pkg} instalado."
+            return 0
+        fi
+
+        ((attempt++))
+
+        if echo "$output" | grep -qiE 'already locked|Please wait for it to finish|Operation in progress'; then
+            echo "       Homebrew bloqueado, reintentando... (${attempt}/${max_attempts})"
+            sleep 15
+            continue
+        fi
+
+        echo "$output"
+        echo "[ERROR] No se pudo instalar ${pkg}."
+        return 1
+    done
+
+    echo "[ERROR] No se pudo instalar ${pkg} despues de varios intentos (Homebrew bloqueado)."
+    return 1
+}
+
+ensure_php() {
+    if is_php_ready; then
+        echo "       OK - PHP $(php -r 'echo PHP_VERSION;') ya disponible."
+        return 0
+    fi
+
+    for formula in php php@8.3 php@8.2; do
+        if is_brew_pkg_installed "$formula"; then
+            echo "       OK - ${formula} ya instalado con Homebrew."
+            setup_brew_path
+            if is_php_ready; then
+                return 0
+            fi
+        fi
+    done
+
+    brew_install_with_retry php
+}
+
+ensure_mysql() {
+    if is_mysql_ready; then
+        echo "       OK - MySQL ya disponible."
+        return 0
+    fi
+
+    for formula in mysql mysql@8.4 mysql@8.0; do
+        if is_brew_pkg_installed "$formula"; then
+            echo "       OK - ${formula} ya instalado con Homebrew."
+            BREW_MYSQL_SERVICE="$formula"
+            return 0
+        fi
+    done
+
+    if brew_install_with_retry mysql; then
+        BREW_MYSQL_SERVICE="mysql"
+        return 0
+    fi
+
+    return 1
+}
+
+ensure_node() {
+    if is_node_ready; then
+        echo "       OK - Node.js $(node -v) ya disponible."
+        return 0
+    fi
+
+    if is_brew_pkg_installed node; then
+        echo "       OK - node ya instalado con Homebrew."
+        setup_brew_path
+        is_node_ready
+        return $?
+    fi
+
+    brew_install_with_retry node
+}
+
 install_homebrew_if_needed() {
     setup_brew_path
     if command -v brew >/dev/null 2>&1; then
@@ -38,18 +193,11 @@ install_homebrew_if_needed() {
 
 brew_install_if_missing() {
     local pkg="$1"
-    if brew list "$pkg" &>/dev/null; then
+    if is_brew_pkg_installed "$pkg"; then
         echo "       OK - ${pkg} ya instalado."
         return 0
     fi
-
-    echo "       Instalando ${pkg} con Homebrew..."
-    if ! brew install "$pkg"; then
-        echo "[ERROR] No se pudo instalar ${pkg}."
-        return 1
-    fi
-    echo "       OK - ${pkg} instalado."
-    return 0
+    brew_install_with_retry "$pkg"
 }
 
 install_composer_if_needed() {
@@ -84,19 +232,38 @@ install_composer_if_needed() {
 install_system_dependencies() {
     echo ""
     echo "[Paso 0] Instalando herramientas del sistema (PHP, MySQL, Node.js, Composer)..."
+    echo "         Si Homebrew ya esta instalando algo, este paso esperara automaticamente."
+    echo "         No ejecute Instalar.command dos veces al mismo tiempo."
+    echo ""
 
     install_homebrew_if_needed || return 1
     setup_brew_path
+    wait_for_brew_available 6 5 || true
 
-    brew_install_if_missing php || return 1
-    brew_install_if_missing mysql || return 1
-    brew_install_if_missing node || return 1
-    install_composer_if_needed || return 1
+    local failed=0
+    ensure_php || failed=1
+    ensure_mysql || failed=1
+    ensure_node || failed=1
+    install_composer_if_needed || failed=1
 
-    if ! brew services list 2>/dev/null | grep -qE "^${BREW_MYSQL_SERVICE}\s"; then
+    setup_brew_path
+
+    if ! brew services list 2>/dev/null | grep -qE "^${BREW_MYSQL_SERVICE}[[:space:]]"; then
         if brew services list 2>/dev/null | grep -qE "^mysql@"; then
             BREW_MYSQL_SERVICE="$(brew services list 2>/dev/null | awk '/^mysql@/{print $1; exit}')"
+        elif is_brew_pkg_installed mysql; then
+            BREW_MYSQL_SERVICE="mysql"
         fi
+    fi
+
+    if (( failed == 1 )); then
+        if is_php_ready && is_node_ready && command -v composer >/dev/null 2>&1; then
+            echo ""
+            echo "       [AVISO] Hubo problemas con Homebrew, pero PHP/Node/Composer estan listos."
+            echo "       Se continuara con la instalacion..."
+            return 0
+        fi
+        return 1
     fi
 
     echo "       OK - Herramientas del sistema listas."

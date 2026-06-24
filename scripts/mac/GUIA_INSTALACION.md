@@ -250,6 +250,33 @@ brew services start mysql
 
 ## Solución de problemas
 
+### Error "brew install php process has already locked"
+
+Homebrew solo permite **una instalación a la vez**. Suele pasar si:
+
+- Ejecutó `Instalar.command` dos veces
+- Otra Terminal está instalando algo con `brew`
+- Una instalación anterior se interrumpió
+
+**Solución:**
+
+1. Cierre todas las ventanas de Terminal excepto una
+2. Espere 2-3 minutos a que termine cualquier `brew install` activo
+3. Limpie descargas incompletas y reintente:
+
+```bash
+# Ver si brew sigue corriendo
+pgrep -lf brew
+
+# Si NO hay procesos brew activos, limpiar bloqueos:
+rm -f "$(brew --cache)/downloads/"*.incomplete 2>/dev/null
+
+# Volver a ejecutar
+./Instalar.command
+```
+
+El instalador actualizado **espera y reintenta automáticamente** si Homebrew está ocupado.
+
 ### macOS no permite abrir Instalar.command
 
 ```bash
